@@ -21,6 +21,8 @@ class UWBReceiver:
         self.expected_len = 0
         # 最新解析数据（线程安全访问）
         self.data_queue = Queue(maxsize=100) # th_meas, r_meas, th_filt, r_filt
+        self.lock = threading.Lock()
+        self.filtered_location=None
         # 滤波器配置
         self.filter = custom_filter
 
@@ -101,16 +103,31 @@ class UWBReceiver:
                     # 收到完整包
                     parsed = self.parse_packet(self.buffer)
                     if parsed:
-                        th_meas, r_meas = parsed['self_raw_angle'], parsed['self_raw_range']
-                        x_meas, y_meas =   r_meas * math.sin(math.radians(th_meas)), - r_meas * math.cos(math.radians(th_meas))
-                        if self.filter is not None:
-                            x_filt, y_filt = self.filter.update(x_meas, y_meas)
-                        else:
-                            th_filt, r_filt = parsed['tag_a0_filter_angle'], parsed['tag_a0_filter_range']
-                            x_filt, y_filt = r_filt * math.sin(math.radians(th_filt)), - r_filt * math.cos(math.radians(th_filt))
-                        self.data_queue.put((x_meas, y_meas, x_filt, y_filt))
+                        self._update_data(parsed)
                 # 无论对不对，都重置状态机
                 self.state = "WAIT_HEAD"
+
+
+    def _update_data(self, parsed):
+        th_meas, r_meas = parsed['self_raw_angle'], parsed['self_raw_range']
+
+        # 无效数据
+        if int(th_meas) == 90 or int(th_meas) == -90:
+            return
+        
+        x_meas, y_meas =   r_meas * math.sin(math.radians(th_meas)), - r_meas * math.cos(math.radians(th_meas))
+        if self.filter is not None:
+            x_filt, y_filt = self.filter.update(x_meas, y_meas)
+        else:
+            th_filt, r_filt = parsed['tag_a0_filter_angle'], parsed['tag_a0_filter_range']
+            x_filt, y_filt = r_filt * math.sin(math.radians(th_filt)), - r_filt * math.cos(math.radians(th_filt))
+        
+        # print(f'x_meas: {x_meas}, y_meas: {y_meas}, x_filt: {x_filt}, y_filt: {y_filt}')
+        # put queue
+        self.data_queue.put((x_meas/100, y_meas/100, x_filt/100, y_filt/100))
+        # 更新滤波后的位置
+        with self.lock:
+            self.filtered_location = (x_filt/100, y_filt/100)
 
     def checksum(self, payload: bytes) -> int:
         """ 校验和: cmd_saddr 到 reserve 的异或结果 """
@@ -226,3 +243,10 @@ class UWBReceiver:
             return self.data_queue.get_nowait()
         except Empty:
             return None
+
+    def get_filtered_location(self):
+        with self.lock:
+            if self.filtered_location is not None:
+                return self.filtered_location
+            else: 
+                raise Exception("No filtered location available")

@@ -74,7 +74,7 @@ class VideoRecorder:
 
 
 if __name__ == "__main__":
-    ip = "192.168.31.26"  # 改成你的HTTP流地址
+    ip = "10.201.171.40"  # 改成你的HTTP流地址
     # 注意：resolution_config: 12-1024p, 11-720p, 8-480p, 7-360p, 5-240p
     recorder = VideoRecorder(ip, "recorded.mp4", resolution_config=5, fps=30.0, max_queue=500)
     recorder.start()
