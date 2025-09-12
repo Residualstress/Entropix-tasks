@@ -14,12 +14,19 @@
 
 #define DEBUG_MODULE "OA_SUP"
 
+static uint8_t oaEnable = 0; // 默认关闭，避免一上电就覆盖外部
+PARAM_GROUP_START(oa)
+PARAM_ADD(PARAM_UINT8, enable, &oaEnable)  // cfclient: Parameters -> oa.enable = 1 开启
+PARAM_GROUP_STOP(oa)
+
 // ---------- 工具宏 ----------
 #define CLAMP(x, a, b) ((x) < (a) ? (a) : ((x) > (b) ? (b) : (x)))
 static inline float lowpass(float y_prev, float u, float alpha) {
   // alpha in [0,1], higher = faster
   return y_prev + alpha * (u - y_prev);
 }
+#define RANGE_VALID_MAX_MM 2000
+#define SENSOR_TIMEOUT_MS  200   // 关键方向 200ms 无更新则不接管
 
 // ---------- 参数（单位：mm 或 m/s）----------
 static const uint16_t D_FRONT_ENTER_MM = 400;   // 前向进入阈值 0.60 m
@@ -37,6 +44,10 @@ static const float V_HOLD_BACK_MAX  = 0.20f;    // 前向保持时允许的后�
 static const float K_HOLD           = 1.0f;     // 前向保持比例（m/s per m误差）
 static const float V_PASSTHROUGH_MAX= 0.30f;    // 最终速度统一限幅
 static const float V_SLEW_MAX       = 2.0f;     // 侧向指令斜率限幅 m/s^2（平滑过渡）
+
+static uint32_t lastValidMs_front = 0;
+static uint32_t lastValidMs_left  = 0;
+static uint32_t lastValidMs_right = 0;
 
 // Commander 优先级（3 常用于高优先级）
 static const int CMD_PRIORITY = 3;
@@ -96,28 +107,57 @@ void appMain(void) {
 
   for (;;) {
     vTaskDelay(M2T(10));
-
+    
+    uint32_t nowTick = xTaskGetTickCount();
+    float dt = (float)(nowTick - lastTick) * (1.0f / configTICK_RATE_HZ);
+    lastTick = nowTick;
+    
     // 若 deck 未就绪，直接跳过（不接管）
     uint8_t positioningInit = paramGetUint(idPositioningDeck);
     uint8_t multirangerInit = paramGetUint(idMultiranger);
-    if (!multirangerInit) {
+
+    // 使能开关：0 则完全透传，不接管
+    if (!oaEnable) {
       state = OA_NORMAL;
       continue;
     }
-
+    
     // 读取并低通（把 0 当作无效读数忽略）
     uint16_t f_raw = logGetUint(idFront);
     uint16_t l_raw = logGetUint(idLeft);
     uint16_t r_raw = logGetUint(idRight);
     uint16_t b_raw = logGetUint(idBack);
     uint16_t u_raw = logGetUint(idUp);
+    
+    // ... 读取 raw 后，做钳制 & 低通 & 更新时间戳 ...
+    uint32_t nowMs = nowTick * portTICK_PERIOD_MS;
 
-    if (f_raw > 0) f_mm = lowpass(f_mm, (float)f_raw, LP_ALPHA);
-    if (l_raw > 0) l_mm = lowpass(l_mm, (float)l_raw, LP_ALPHA);
-    if (r_raw > 0) r_mm = lowpass(r_mm, (float)r_raw, LP_ALPHA);
-    if (b_raw > 0) b_mm = lowpass(b_mm, (float)b_raw, LP_ALPHA);
-    if (u_raw > 0) u_mm = lowpass(u_mm, (float)u_raw, LP_ALPHA);
+    if (f_raw > 0) {
+      if (f_raw > RANGE_VALID_MAX_MM) f_raw = RANGE_VALID_MAX_MM;
+      f_mm = lowpass(f_mm, (float)f_raw, LP_ALPHA);
+      lastValidMs_front = nowMs;
+    }
+    if (l_raw > 0) {
+      if (l_raw > RANGE_VALID_MAX_MM) l_raw = RANGE_VALID_MAX_MM;
+      l_mm = lowpass(l_mm, (float)l_raw, LP_ALPHA);
+      lastValidMs_left = nowMs;
+    }
+    if (r_raw > 0) {
+      if (r_raw > RANGE_VALID_MAX_MM) r_raw = RANGE_VALID_MAX_MM;
+      r_mm = lowpass(r_mm, (float)r_raw, LP_ALPHA);
+      lastValidMs_right = nowMs;
+    }
+    
+    // 关键方向传感器超时：不接管
+    bool frontOk = (nowMs - lastValidMs_front) <= SENSOR_TIMEOUT_MS;
+    bool leftOk  = (nowMs - lastValidMs_left ) <= SENSOR_TIMEOUT_MS;
+    bool rightOk = (nowMs - lastValidMs_right) <= SENSOR_TIMEOUT_MS;
 
+    if (!multirangerInit || (!frontOk && !leftOk && !rightOk)) {
+      state = OA_NORMAL;
+      continue;
+    }
+    
     // 状态机：进入条件
     if (state == OA_NORMAL) {
       if (f_mm < D_FRONT_ENTER_MM) {
@@ -159,8 +199,10 @@ void appMain(void) {
         clearStartMs = 0;
       }
     } else if (state == OA_CLEARING) {
-      // CLEARING：本轮放行，不写 setpoint，下轮回到 NORMAL
       state = OA_NORMAL;
+      setpoint_t spTmp = {0};
+      commanderGetSetpoint(&spTmp, NULL);
+      vy_cmd_prev = spTmp.velocity.y;
     }
 
     // 取外部（上层）给的 setpoint，用作基底
