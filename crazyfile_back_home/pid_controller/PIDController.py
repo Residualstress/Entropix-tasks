@@ -49,8 +49,8 @@ class PIDController2D:
         std_y = np.std(self.error_history_y)
 
         # 简单归一化，假设 std<0.01 就算稳定 ~ 1.0
-        stability_x = std_x
-        stability_y = std_y
+        stability_x = 1.0/(1.0 + std_x)
+        stability_y = 1.0/(1.0 + std_y)
 
         return (stability_x + stability_y) / 2.0
 
@@ -111,8 +111,8 @@ class PIDController3D:
         std_y = np.std(self.error_history_y)
         std_z = np.std(self.error_history_z)
 
-        stability_x = std_x
-        stability_y = std_y
-        stability_z = std_z
+        stability_x = 1.0/(1.0+std_x)
+        stability_y = 1.0/(1.0+std_y)
+        stability_z = 1.0/(1.0+std_z)
 
         return (stability_x + stability_y + stability_z) / 3.0

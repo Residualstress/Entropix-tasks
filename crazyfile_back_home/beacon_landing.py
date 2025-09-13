@@ -17,41 +17,42 @@ from apriltag_beacon.april_test import HttpAprilResolver
 
 URI = uri_helper.uri_from_env(default='radio://0/80/2M/E7E7E7E7E7')
 
-DEFAULT_HEIGHT = 0.5
+DEFAULT_HEIGHT = 0.7
 
 deck_attached_event = Event()
 
 logging.basicConfig(level=logging.ERROR)
 
-position_estimate = [0, 0, 0]
+position_estimate = [0.0, 0.0, 0.0]
 
-rel_beacon_postion = None
+rel_postion2beacon = None
 
 state = 'ALIGNING'
 
 def aligning(mc: MotionCommander, pid: PIDController2D):
 
-    if rel_beacon_postion is None:
+    if rel_postion2beacon is None:
         return
     
-    vel_x, vel_y = pid.compute_velocity(rel_beacon_postion[0], rel_beacon_postion[1])
+    vel_x, vel_y = pid.compute_velocity(rel_postion2beacon[0], rel_postion2beacon[1])
 
-    print(f' m: {rel_beacon_postion[0]}, y: {rel_beacon_postion[1]}, vel_x: {vel_x}, vel_y: {vel_y}')
+    print(f' m: {rel_postion2beacon[0]}, y: {rel_postion2beacon[1]}, vel_x: {vel_x}, vel_y: {vel_y}')
 
     mc.start_linear_motion(vel_x, vel_y, 0)
-    
-    print(pid.get_stability())
-    if pid.get_stability() > 0.3:
-        
+
+    # 如果稳定度满足要求，进入下降阶段
+    stability = pid.get_stability() # 注意：stability的度量需要测试和调整
+    print(stability)
+    if stability > 0.9:
         global state
         state = 'DESCENDING'
 
 def descending(mc: MotionCommander, pid: PIDController3D):
 
-    if rel_beacon_postion is None:
+    if rel_postion2beacon is None:
         return
 
-    x,y,z = rel_beacon_postion[0], rel_beacon_postion[1], position_estimate[2]
+    x,y,z = rel_postion2beacon[0], rel_postion2beacon[1], position_estimate[2]
 
     vel_x, vel_y, vel_z = pid.compute_velocity(x,y,z)
 
@@ -59,24 +60,28 @@ def descending(mc: MotionCommander, pid: PIDController3D):
 
     mc.start_linear_motion(vel_x, vel_y, vel_z)
 
-    print(pid.get_stability())
-    if pid.get_stability() > 0.3:
-        
+    # 如果稳定度满足要求，进入降落阶段
+    stability = pid.get_stability()
+    print(stability)
+    if stability > 0.9:
         global state
         state = 'LANDING'
 
 def beacon_landing(scf):
     pid_aligning = PIDController2D(target_point=(0.0,0.0), kp=1.0, ki=0.3, kd=0.0, output_limit=0.2)
     pid_descending = PIDController3D(target_point=(0.0,0.0,0.25), kp=0.5, ki=0.2, kd=0.0, output_limit=0.2)
+
     with MotionCommander(scf, default_height=DEFAULT_HEIGHT) as mc:
         time.sleep(5.0)
         while True:
-            if state == 'ALIGNING':
+            print(f'state: {state}') # log current state
+            if state == 'ALIGNING': # align with beacon
                 aligning(mc, pid_aligning)
-            elif state == "DESCENDING":
+            elif state == "DESCENDING": # descending to 0.25m
                 descending(mc, pid_descending)
             elif state == 'LANDING':
                 mc.land()
+                break
 
             time.sleep(0.05)
 
@@ -87,21 +92,17 @@ def log_pos_callback(timestamp, data, logconf):
     position_estimate[1] = data['stateEstimate.y']
     position_estimate[2] = data['stateEstimate.z']
 
+
 def beacon_resolver_callback(center):
     target_pixel_position = center
     center_pixel_position = (160,120)
-    rel_pixel_position = np.array(target_pixel_position) - np.array(center_pixel_position)
-    # resolution = [320 240]
-    # cx = 146.35090
-    # cy = 125.99543
-    # fx = 316.92703
-    # fy = 326.38666
-    alpha = 320 # 相机标定的结果
+    rel_pixel_position = np.array(target_pixel_position) - np.array(center_pixel_position) # relative to center (pixel position)
+    alpha = 320.1 # 相机标定的结果
     z = position_estimate[2]
-    rel_position = tuple(rel_pixel_position / alpha * z)
-    rel_position[1] = -rel_position[1] # y轴翻转
-    global rel_beacon_postion
-    rel_beacon_postion = rel_position
+    rel_position = tuple(rel_pixel_position / alpha * z) # 投影到实际距离
+    rel_position[1] = -rel_position[1] # y轴翻转 
+    global rel_postion2beacon # 相机中心相对于beacon的实际距离
+    rel_postion2beacon = rel_position
 
 def param_deck_flow(_, value_str):
     value = int(value_str)
