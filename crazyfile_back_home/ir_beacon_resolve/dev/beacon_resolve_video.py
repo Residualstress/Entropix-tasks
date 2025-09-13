@@ -85,7 +85,7 @@ while True:
     frame_processed = process_frame(frame)
     cv2.imshow('Original', frame)
     cv2.imshow('IR Beacon Detection', frame_processed)
-    if cv2.waitKey(50) & 0xFF == ord('q'):  # 按 q 退出
+    if cv2.waitKey(20) & 0xFF == ord('q'):  # 按 q 退出
         break
 
 cap.release()
