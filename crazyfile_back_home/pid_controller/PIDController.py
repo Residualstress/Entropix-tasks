@@ -32,8 +32,8 @@ class PIDController2D:
         self.error_history_x.append(error_x)
         self.error_history_y.append(error_y)
 
-        vx = self.pid_x(x)  
-        vy = self.pid_y(y)
+        vx = -self.pid_x(x)
+        vy = -self.pid_y(y)
         return vx, vy
 
     def get_stability(self):
