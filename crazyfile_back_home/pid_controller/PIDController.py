@@ -32,8 +32,8 @@ class PIDController2D:
         self.error_history_x.append(error_x)
         self.error_history_y.append(error_y)
 
-        vx = -self.pid_x(x)
-        vy = -self.pid_y(y)
+        vx = self.pid_x(x) # 这里必须是正号，不然会影响别uwb的PID
+        vy = self.pid_y(y) # 由于在beacon_landing中把err修正为了飞机相对于beacon的坐标，这里为正
         return vx, vy
 
     def get_stability(self):

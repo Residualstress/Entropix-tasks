@@ -18,7 +18,8 @@ from cflib.utils import uri_helper
 # 你的工程内自带模块
 # sys.path.append(r"F:\BaiduSyncdisk\PhD_Project\Indoor_MAV\Entropix-tasks\crazyfile_back_home")
 from pid_controller.PIDController import PIDController2D
-from apriltag_beacon.april_test import HttpAprilResolver
+# from apriltag_beacon.april_test import HttpAprilResolver
+from onboard_apriltag.onboard_apriltag import ESP32AprilTagWS
 
 # -----------------------------
 # 用户可配置参数
@@ -35,8 +36,8 @@ IMG_CX = 160
 IMG_CY = 120
 
 # 对齐阈值（等效米）+ 保持时间
-ALIGN_EPS_M_ENTER = 0.12   # 进入 TRACK_DESCEND 的误差阈值（米）
-ALIGN_HOLD_SEC    = 0.30   # 进入前需连续满足的时间（秒）
+ALIGN_EPS_M_ENTER = 0.1   # 进入 TRACK_DESCEND 的误差阈值（米）  # TODO: 原本是0.15
+ALIGN_HOLD_SEC    = 0.70   # 进入前需连续满足的时间（秒）  # TODO: 原本是0.3
 
 # 丢失目标判定
 MISS_TIMEOUT      = 1.5    # 超过该秒数未见目标，则视为丢失（悬停）
@@ -49,7 +50,7 @@ DESCENT_RATE      = 0.05   # TRACK_DESCEND 阶段的目标竖直速度（m/s，�
 XY_SPEED_LIMIT    = 0.1   # 同步下降阶段的水平限速（m/s）
 
 # 仅Z收尾阈值
-Z_ONLY_THRESHOLD  = 0.15   # 进入 FINAL_DROP 的高度阈值（m）
+Z_ONLY_THRESHOLD  = 0.25   # 进入 FINAL_DROP 的高度阈值（m）  # TODO: 原本是0.15
 FINAL_DROP_VZ_FAR = 0.20   # 0.15 m ~ 0.08 m 区间的竖直速度（m/s）
 FINAL_DROP_VZ_NEAR= 0.10   # 0.08 m ~ 地面的竖直速度（m/s）
 TOUCHDOWN_Z       = 0.03   # 触地判定/收尾触发（m）
@@ -88,34 +89,21 @@ def clamp(v, lo, hi):
 # -----------------------------
 # 回调：AprilTag 像素中心
 # -----------------------------
-def beacon_resolver_callback(center):
+def beacon_resolver_callback(detections):
     """
     兼容多种 center 结构；统一输出 (u,v)，v 向上为正
     """
+    if len(detections) == 0:
+        return
+    
+    det = detections[0]
+    x,y = float(det['cx']), float(det['cy'])
     global pix_err_raw, pix_err_ema, last_seen_ts
 
-    if center is None:
-        return
-
-    # 解析 (x, y)
-    if isinstance(center, dict):
-        if 'center' in center and center['center'] is not None:
-            c = center['center']
-            if not (isinstance(c, (list, tuple, np.ndarray)) and len(c) >= 2):
-                return
-            x, y = float(c[0]), float(c[1])
-        elif 'x' in center and 'y' in center:
-            x, y = float(center['x']), float(center['y'])
-        else:
-            return
-    elif isinstance(center, (list, tuple, np.ndarray)) and len(center) >= 2:
-        x, y = float(center[0]), float(center[1])
-    else:
-        return
 
     # 像素误差（图像中心为原点；v 取上为正）
-    u = x - IMG_CX
-    v = IMG_CY - y
+    u = IMG_CX - x
+    v = y - IMG_CY
 
     pix_err_raw = (u, v)
 
@@ -260,7 +248,7 @@ def beacon_landing(scf):
     LANDED            : 收尾完成
     """
     pid_xy = PIDController2D(
-        target_point=(0.0, 0.0),
+        target_point=(0.0, -0.02),
         kp=1.0, ki=0.3, kd=0.0,
         output_limit=XY_SPEED_LIMIT  # 二重限幅，保险
     )
@@ -291,8 +279,8 @@ def beacon_landing(scf):
 # -----------------------------
 if __name__ == '__main__':
     # 1) 启动 AprilTag 解析
-    ip = "10.201.171.40"  # TODO: 改成你的服务器 IP
-    april_beacon = HttpAprilResolver(ip, callback=beacon_resolver_callback)
+    ip = "172.20.10.9"  # TODO: 改成你的服务器 IP
+    april_beacon = ESP32AprilTagWS(ip, callback=beacon_resolver_callback)
     if hasattr(april_beacon, "start"):
         try:
             april_beacon.start()
