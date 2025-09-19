@@ -2,6 +2,8 @@ import logging
 import sys
 import time
 from threading import Event
+import warnings
+
 
 import cflib.crtp
 from cflib.crazyflie import Crazyflie
@@ -66,9 +68,11 @@ def param_deck_flow(_, value_str):
 
 
 if __name__ == '__main__':
-    pid_controller = PIDController2D(target_point=(0.5, -1.0), kp=1.0, ki=0.3, kd=0.0, output_limit=0.2)
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+    pid_controller = PIDController2D(target_point=(0.5, -1.0), kp=1.0, ki=0.3, kd=0.0, output_limit=0.15)
     ukf_filter = PositionUKF(dt=0.02, win_size=6) # 50Hz data rate
-    uwb = UWBReceiver("COM6", 115200, ukf_filter)
+    uwb = UWBReceiver("COM4", 115200, ukf_filter)
     uwb.start()
 
     cflib.crtp.init_drivers()

@@ -6,7 +6,7 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtWidgets
 
 ukf_filter = PositionUKF(dt=0.02, win_size=6) # 50Hz data rate
-uwb = UWBReceiver("COM6", 115200, ukf_filter)
+uwb = UWBReceiver("COM4", 115200, ukf_filter)
 uwb.start()
 
 # # ukf_filter = PositionUKF(dt=0.02, win_size=5) # 50Hz data rate
