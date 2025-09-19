@@ -6,7 +6,7 @@ import time
 
 class AprilTagDetect():
     def __init__(self, families='tag25h9', id_wanted =3, draw=True):
-        self.detector = Detector(families=families, nthreads=2)
+        self.detector = Detector(families=families, nthreads=1)
         self.id_wanted = id_wanted
         self.draw = draw
 
@@ -37,7 +37,9 @@ class HttpAprilResolver:
 
         # 设置分辨率
         requests.get(f'http://{ip}/control?var=framesize&val={resolution_config}')
-        requests.get(f'http://{ip}/control?var=quality&val=50')
+        requests.get(f'http://{ip}/control?var=quality&val=50') # quality 50
+        requests.get(f'http://{ip}/control?var=ae_level&val=-1') # ev -1
+        requests.get(f'http://{ip}/control?var=special_effect&val=2') # gray
 
     def start(self):
         self.cap = cv2.VideoCapture(self.stream_url)
@@ -54,7 +56,7 @@ class HttpAprilResolver:
             ret, frame = self.cap.read()
             if not ret:
                 continue
-
+            frame = cv2.flip(frame, 0)
             # 处理帧
             center = self.resolver.detect(frame) # data is center
 
@@ -77,6 +79,6 @@ class HttpAprilResolver:
 
 if __name__ == "__main__":
     # main()
-    HttpAprilResolver('172.20.10.9', None, display=True).start()
+    HttpAprilResolver('10.201.171.4', None, display=True).start()
     while True:
         time.sleep(1)
