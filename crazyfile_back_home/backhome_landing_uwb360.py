@@ -64,6 +64,7 @@ TOUCHDOWN_Z       = 0.03   # 触地判定/收尾触发（m）
 deck_attached_event = Event()
 position_estimate   = [0.0, 0.0, 0.0]  # stateEstimate.{x,y,z}
 uwb_position = [0.0, 0.0, 0.0]
+yaw_estimate = 0
 
 last_seen_ts = None
 pix_err_raw  = None        # (u, v) 像素误差（右正、上正）
@@ -74,10 +75,29 @@ state = 'BACKHOME'         # 'BACKHOME' -> 'ALIGNING' -> 'TRACK_DESCEND' -> 'FIN
 # 计时器
 _align_ok_since = None
 
+def yaw_to_rot2d(yaw_deg=None, yaw_rad=None):
+    """
+    根据 yaw 角度生成二维旋转矩阵。
+    :param yaw_deg: 偏航角（度）
+    :param yaw_rad: 偏航角（弧度）
+    :return: 2x2 numpy 旋转矩阵
+    """
+    if yaw_rad is None:
+        if yaw_deg is None:
+            raise ValueError("必须提供 yaw_deg 或 yaw_rad")
+        yaw_rad = np.deg2rad(-yaw_deg)
+    
+    c, s = np.cos(yaw_rad), np.sin(yaw_rad)
+    R = np.array([[c, -s],
+                  [s,  c]])
+    return R
+
 def log_pos_callback(timestamp, data, logconf):
+    global position_estimate, yaw_estimate
     position_estimate[0] = data['stateEstimate.x']
     position_estimate[1] = data['stateEstimate.y']
     position_estimate[2] = data['stateEstimate.z']
+    yaw_estimate = data['stateEstimate.yaw']
 
 
 def param_deck_flow(_, value_str):
@@ -105,9 +125,16 @@ def back_home(mc: MotionCommander, pid_xy: PIDController2D):
 
     vx, vy = pid_xy.compute_velocity(x, y)
 
-    print(f'x: {x}, y: {y}, vel_x: {vx}, vel_y: {vy}')
+    
 
-    mc.start_linear_motion(vx, vy, 0)
+    R = yaw_to_rot2d(yaw_deg=yaw_estimate)
+    v = R @ np.array([vx, vy])
+    vx_yaw = v[0]
+    vy_yaw = v[1]
+
+    print(f'x: {x}, y: {y}, yaw: {yaw_estimate},vel_x: {vx}, vel_y: {vy},vel_x: {vx_yaw}, vel_y: {vy_yaw}')
+
+    mc.start_linear_motion(vx_yaw, vy_yaw, 0)
 
     ex, ey = pid_xy.get_err(x, y)
     e_xy   = (ex**2 + ey**2)**0.5
@@ -249,6 +276,12 @@ def backhome_landing(scf):
     global state
     with MotionCommander(scf, default_height=DEFAULT_HEIGHT) as mc:
         time.sleep(1.5)  # 起飞后稳定一下
+        mc.turn_left(45,rate=72)
+        mc.turn_right(66,rate=72)
+        mc.turn_left(88,rate=72)
+        mc.turn_right(15,rate=72)
+        mc.turn_left(180,rate=72)
+        mc.turn_right(360,rate=72)
         while True:
             try:
                 if state == 'BACKHOME':
@@ -325,7 +358,7 @@ if __name__ == '__main__':
     uwb.start()
 
     # AprilTag 解析
-    ip = "172.20.10.12"  # TODO: 改成你的服务器 IP
+    ip = "10.201.171.4"  # TODO: 改成你的服务器 IP
     april_beacon = HttpAprilResolver(ip, callback=beacon_resolver_callback)
     if hasattr(april_beacon, "start"):
         try:
@@ -346,6 +379,7 @@ if __name__ == '__main__':
         logconf.add_variable('stateEstimate.x', 'float')
         logconf.add_variable('stateEstimate.y', 'float')
         logconf.add_variable('stateEstimate.z', 'float')
+        logconf.add_variable('stateEstimate.yaw', 'float')
         scf.cf.log.add_config(logconf)
         logconf.data_received_cb.add_callback(log_pos_callback)
 
