@@ -79,6 +79,6 @@ class HttpAprilResolver:
 
 if __name__ == "__main__":
     # main()
-    HttpAprilResolver('172.20.10.12', None, display=True).start()
+    HttpAprilResolver('172.20.10.11', None, display=True).start()
     while True:
         time.sleep(1)
