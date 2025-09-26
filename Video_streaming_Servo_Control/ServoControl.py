@@ -33,7 +33,7 @@ from typing import List, Optional
 import requests
 
 # 默认设备地址（可用 --host 覆盖）
-DEVICE_HOST = "10.201.171.123"
+DEVICE_HOST = "172.20.10.11"
 # 舵机控制服务端口（与固件一致）
 SERVO_PORT = 8080
 # 角度安全范围

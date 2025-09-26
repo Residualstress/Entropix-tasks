@@ -56,7 +56,8 @@ class HttpAprilResolver:
             ret, frame = self.cap.read()
             if not ret:
                 continue
-            frame = cv2.flip(frame, 0)
+            # frame = cv2.flip(frame, 0)
+            frame = cv2.rotate(frame, cv2.ROTATE_180) # TODO: ！！！！！！！！！！！！！
             # 处理帧
             center = self.resolver.detect(frame) # data is center
 

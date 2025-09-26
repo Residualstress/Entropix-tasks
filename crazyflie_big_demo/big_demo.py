@@ -3,6 +3,7 @@ import sys
 import time
 from threading import Event
 import traceback
+import requests
 
 import numpy as np
 import math
@@ -25,6 +26,8 @@ URI = uri_helper.uri_from_env(default='radio://0/80/2M/E7E7E7E7E7')
 deck_attached_event = Event()
 
 logging.basicConfig(level=logging.ERROR)
+
+ip = None
 
 DEFAULT_HEIGHT = 0.7
 
@@ -81,6 +84,9 @@ state = 'FIND_PET'         # 'BACKHOME' -> 'ALIGNING' -> 'TRACK_DESCEND' -> 'FIN
 
 # 计时器
 _align_ok_since = None
+
+def servo_set_angle(angle):
+    requests.get(f'http://{ip}:8080/servo?angle={angle}')
 
 def yaw_to_rot2d(yaw_deg=None, yaw_rad=None):
     """
@@ -187,6 +193,7 @@ def back_home(mc: MotionCommander, pid_xy: PIDController2D):
             state = 'ALIGNING'
             uwb.stop()
             april_beacon.start() #  启动 AprilTag 解析
+            servo_set_angle(90)
     else:
         _align_ok_since = None
 
@@ -430,12 +437,16 @@ def uwb_callback(data):
 
 if __name__ == '__main__':
     # UWB 解析
+    servo_set_angle(90)
+
     ukf_filter = PositionUKF(dt=0.025, win_size=3) # 50Hz data rate
     uwb = UWB360Receiver("COM5", uwb_callback, ukf_filter)
     uwb.start()
 
     # AprilTag 解析
     ip = "171.20.10.11"  # TODO: 改成你的服务器 IP
+
+    servo_set_angle(135)
 
     pet_beacon = HttpPetDetection(ip, callback=pet_detector_callback)
     pet_beacon.start()
