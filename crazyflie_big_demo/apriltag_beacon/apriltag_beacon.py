@@ -26,7 +26,7 @@ class AprilTagDetect():
             return center
 
 class HttpAprilResolver:
-    def __init__(self, ip, callback, resolution_config=5, display=True):
+    def __init__(self, ip, callback, resolution_config=6, display=True):
         self.stream_url = f'http://{ip}:81/stream'
         self.stop_event = threading.Event()
         self.cap = None
@@ -34,14 +34,16 @@ class HttpAprilResolver:
         self.callback = callback  # 识别结果回调函数
         self.resolution_config = resolution_config
         self.resolver = AprilTagDetect(families='tag25h9', id_wanted =3, draw=True)
+        self.ip = ip
 
-        # 设置分辨率
-        requests.get(f'http://{ip}/control?var=framesize&val={resolution_config}')
-        requests.get(f'http://{ip}/control?var=quality&val=50') # quality 50
-        requests.get(f'http://{ip}/control?var=ae_level&val=-1') # ev -1
-        requests.get(f'http://{ip}/control?var=special_effect&val=2') # gray
+        
 
     def start(self):
+        # 设置分辨率
+        requests.get(f'http://{self.ip}/control?var=framesize&val={self.resolution_config}')
+        requests.get(f'http://{self.ip}/control?var=quality&val=50') # quality 50
+        requests.get(f'http://{self.ip}/control?var=ae_level&val=-1') # ev -1
+        requests.get(f'http://{self.ip}/control?var=special_effect&val=2') # gray
         self.cap = cv2.VideoCapture(self.stream_url)
         if not self.cap.isOpened():
             raise RuntimeError(f"无法打开视频流: {self.stream_url}")
@@ -56,8 +58,8 @@ class HttpAprilResolver:
             ret, frame = self.cap.read()
             if not ret:
                 continue
-            # frame = cv2.flip(frame, 0)
-            frame = cv2.rotate(frame, cv2.ROTATE_180) # TODO: ！！！！！！！！！！！！！
+            frame = cv2.flip(frame, 1)
+            # frame = cv2.rotate(frame, cv2.ROTATE_180) # TODO: ！！！！！！！！！！！！！
             # 处理帧
             center = self.resolver.detect(frame) # data is center
 
@@ -72,6 +74,7 @@ class HttpAprilResolver:
 
     def stop(self):
         self.stop_event.set()
+        self.thread.join()
         if self.cap:
             self.cap.release()
         if self.display:
@@ -80,6 +83,6 @@ class HttpAprilResolver:
 
 if __name__ == "__main__":
     # main()
-    HttpAprilResolver('172.20.10.11', None, display=True).start()
+    HttpAprilResolver('172.20.10.14', None, display=True).start()
     while True:
         time.sleep(1)

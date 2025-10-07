@@ -239,7 +239,7 @@ def backhome_landing(scf):
     """
 
     pid_backhome = PIDController2D(
-        target_point=(0.5, -1.0), 
+        target_point=(0.0, 0.0), 
         kp=1.0, ki=0.3, kd=0.0, 
         output_limit=0.2
     )

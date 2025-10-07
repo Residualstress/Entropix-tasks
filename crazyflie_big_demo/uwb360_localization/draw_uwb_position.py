@@ -12,7 +12,7 @@ def uwb_cb(pkt):
     x,y,z = pkt
     print(f'x:{x} y:{y}')
 
-ukf_filter = PositionUKF(dt=0.025, win_size=3) # 50Hz data rate
+ukf_filter = PositionUKF(dt=0.025, win_size=1) # 50Hz data rate
 uwb = UWB360Receiver("COM5", uwb_cb, ukf_filter)
 uwb.start()
 
@@ -50,4 +50,4 @@ timer = pg.QtCore.QTimer()
 timer.timeout.connect(update)
 timer.start(2) # ms
 
-app.exec_()
+app.exec()

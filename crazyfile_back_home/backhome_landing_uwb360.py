@@ -263,7 +263,7 @@ def backhome_landing(scf):
     """
 
     pid_backhome = PIDController2D(
-        target_point=(0.3, -1.5), 
+        target_point=(0.0, 0.0), 
         kp=1.0, ki=0.3, kd=0.0, 
         output_limit=0.2
     )
@@ -276,12 +276,12 @@ def backhome_landing(scf):
     global state
     with MotionCommander(scf, default_height=DEFAULT_HEIGHT) as mc:
         time.sleep(1.5)  # 起飞后稳定一下
-        mc.turn_left(45,rate=72)
-        mc.turn_right(66,rate=72)
-        mc.turn_left(88,rate=72)
-        mc.turn_right(15,rate=72)
-        mc.turn_left(180,rate=72)
-        mc.turn_right(360,rate=72)
+        mc.turn_left(45,rate=36)
+        mc.turn_right(66,rate=36)
+        mc.turn_left(88,rate=36)
+        # mc.turn_right(15,rate=72)
+        # mc.turn_left(180,rate=72)
+        # mc.turn_right(360,rate=72)
         while True:
             try:
                 if state == 'BACKHOME':
@@ -358,7 +358,7 @@ if __name__ == '__main__':
     uwb.start()
 
     # AprilTag 解析
-    ip = "10.201.171.4"  # TODO: 改成你的服务器 IP
+    ip = "172.20.10.14"  # TODO: 改成你的服务器 IP
     april_beacon = HttpAprilResolver(ip, callback=beacon_resolver_callback)
     if hasattr(april_beacon, "start"):
         try:

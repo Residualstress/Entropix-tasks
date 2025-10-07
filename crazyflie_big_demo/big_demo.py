@@ -27,9 +27,9 @@ deck_attached_event = Event()
 
 logging.basicConfig(level=logging.ERROR)
 
-ip = None
+ip = "10.201.171.228"  # TODO: 改成你的服务器 IP
 
-DEFAULT_HEIGHT = 0.7
+DEFAULT_HEIGHT = 0.9
 
 pet_beacon = None
 april_beacon = None
@@ -78,14 +78,19 @@ pix_err_ema  = None
 target_area_sqrt = None
 
 start_time_stamp = None
-FIND_PET_TIMEOUT = 10
+FIND_PET_TIMEOUT = 3
 
 state = 'FIND_PET'         # 'BACKHOME' -> 'ALIGNING' -> 'TRACK_DESCEND' -> 'FINAL_DROP' -> 'LANDED'
+
+SERVO_DOWN_ANGLE = 180
+SERVO_FORWARD_ANGLE = 90
+SERVO_45_ANGLE = 135
 
 # 计时器
 _align_ok_since = None
 
 def servo_set_angle(angle):
+    print(f'http://{ip}:8080/servo?angle={angle}')
     requests.get(f'http://{ip}:8080/servo?angle={angle}')
 
 def yaw_to_rot2d(yaw_deg=None, yaw_rad=None):
@@ -138,6 +143,14 @@ def find_pet(mc: MotionCommander, pid_area: PIDController1D, pid_yaw: PIDControl
 
     if pix_err_ema is None:
         return
+    
+    print(f'FINDPET {time.time() - start_time_stamp:.2f}', flush=True)
+    if time.time() - start_time_stamp > FIND_PET_TIMEOUT:
+        state = 'BACKHOME'
+        print("1[PET] FIND_PET_TIMEOUT -> BACKHOME", flush=True)
+        pet_beacon.stop() # 停止解析
+        print("[PET] FIND_PET_TIMEOUT -> BACKHOME", flush=True)
+        return
 
     now = time.time()
     if (last_seen_ts is None) or (now - last_seen_ts > MISS_TIMEOUT):
@@ -158,9 +171,7 @@ def find_pet(mc: MotionCommander, pid_area: PIDController1D, pid_yaw: PIDControl
 
     mc.start_linear_motion(vx, 0.0, 0.0, v_yaw)
 
-    if time.time() - start_time_stamp > FIND_PET_TIMEOUT:
-        state = 'BACKHOME'
-        pet_beacon.stop() # 停止解析
+    
 
 def back_home(mc: MotionCommander, pid_xy: PIDController2D):
     global state, _align_ok_since
@@ -193,7 +204,7 @@ def back_home(mc: MotionCommander, pid_xy: PIDController2D):
             state = 'ALIGNING'
             uwb.stop()
             april_beacon.start() #  启动 AprilTag 解析
-            servo_set_angle(90)
+            servo_set_angle(SERVO_DOWN_ANGLE)
     else:
         _align_ok_since = None
 
@@ -319,12 +330,12 @@ def findpet_backhome_landing(scf):
         output_limit=15.0  # 二重限幅，保险
     )
     pid_backhome = PIDController2D(
-        target_point=(0.3, -1.5), 
+        target_point=(0.0, 0.0), 
         kp=1.0, ki=0.3, kd=0.0, 
-        output_limit=0.2
+        output_limit=0.15
     )
     pid_landing = PIDController2D(
-        target_point=(0.02, 0.0),
+        target_point=(0.04, 0.0),
         kp=1.0, ki=0.3, kd=0.0,
         output_limit=XY_SPEED_LIMIT_LANDING  # 二重限幅，保险
     )
@@ -437,16 +448,16 @@ def uwb_callback(data):
 
 if __name__ == '__main__':
     # UWB 解析
-    servo_set_angle(90)
+    servo_set_angle(SERVO_DOWN_ANGLE)
 
-    ukf_filter = PositionUKF(dt=0.025, win_size=3) # 50Hz data rate
-    uwb = UWB360Receiver("COM5", uwb_callback, ukf_filter)
+    ukf_filter = PositionUKF(dt=0.025, win_size=1) # 50Hz data rate
+    uwb = UWB360Receiver("COM5", uwb_callback, None)
     uwb.start()
 
     # AprilTag 解析
-    ip = "171.20.10.11"  # TODO: 改成你的服务器 IP
+    
 
-    servo_set_angle(135)
+    servo_set_angle(SERVO_45_ANGLE)
 
     pet_beacon = HttpPetDetection(ip, callback=pet_detector_callback)
     pet_beacon.start()
