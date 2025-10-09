@@ -1,43 +1,16 @@
-import logging
-import math
-import time
-import threading
-
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from matplotlib.patches import Wedge
 from matplotlib.patches import Arc
+import threading
 
-import cflib.crtp
-from cflib.crazyflie import Crazyflie
-from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
-from cflib.crazyflie.log import LogConfig
+# 这些常量请按你的项目中已有的定义保持一致
+MIN_RANGE_M = 0.05
+MAX_RANGE_M = 6.5
+PLOT_LIM_M  = 7.0
 
-# ====== 你自己的 URI ======
-URI = 'radio://0/80/2M/E7E7E7E7E7'
-
-# ====== 飞行与绘图参数 ======
-TARGET_Z = 0.3            # 目标高度 (m)
-YAW_RATE_DEG = 60        # 旋转角速度 (deg/s)
-N_TURNS = 4                # 旋转圈数
-LOG_PERIOD_MS = 20          # 50 Hz 日志
-ANGLE_BIN_DEG = 5        # 角度栅格, 用于同向覆盖
-MAX_RANGE_M = 5           # 超过量程丢弃
-MIN_RANGE_M = 0.05          # 太近丢弃
-PLOT_LIM_M = 5.0            # 画布范围
-PLOT_HZ = 15                # 实时刷新频率
-
-# ====== 日志等级 ======
-logging.basicConfig(level=logging.ERROR)
-
-
-def wrap_deg(a):
-    a = a % 360.0
-    if a < 0:
-        a += 360.0
-    return a
-
-# --------- 数据聚合：角度栅格, 同向覆盖最新 ----------
+# --------- 数据聚合类（保持原样） ----------
 class SpinMapper:
     """按角度栅格聚合，‘同向覆盖最新’，结束后可填补缺测"""
     def __init__(self, bin_deg=1.0):
@@ -60,7 +33,7 @@ class SpinMapper:
                 if d < MIN_RANGE_M:
                     continue
                 if d > MAX_RANGE_M:
-                    d = MAX_RANGE_M + 10
+                    d = MAX_RANGE_M + 1
                 # 简化：假设 offset 已在外部处理
                 ang = (yaw_deg + key) % 360
                 bin_idx = self._ang_to_bin(ang)
@@ -165,79 +138,36 @@ class LivePlotter:
         self.fig.canvas.draw_idle()
         self.fig.canvas.flush_events()
 
-def main():
-    # 可能你项目里已内置自定义 MotionCommander；否则使用 cflib 自带
-    try:
-        from cflib.positioning.motion_commander import MotionCommander
-    except Exception:
-        # 如果你把自定义 MotionCommander 放在同目录，可改成:
-        # from motion_commander import MotionCommander
-        from cflib.positioning.motion_commander import MotionCommander
 
-    cflib.crtp.init_drivers()
 
-    mapper = SpinMapper(bin_deg=ANGLE_BIN_DEG)
-    plotter = LivePlotter(mapper)
+import time
+mapper = SpinMapper(bin_deg=5)
+plotter = LivePlotter(mapper)
 
-    with SyncCrazyflie(URI, cf=Crazyflie(rw_cache='./cache')) as scf:
-        cf = scf.cf
+# 房间参数
+ROOM_HALF = 4.0  # 房间半边长（米）
 
-        # ---- 设置日志 ----
-        lg = LogConfig(name='spinlog', period_in_ms=LOG_PERIOD_MS)
-        lg.add_variable('stabilizer.yaw', 'float')
-        lg.add_variable('range.front', 'uint16_t')
-        lg.add_variable('range.back',  'uint16_t')
-        lg.add_variable('range.left',  'uint16_t')
-        lg.add_variable('range.right', 'uint16_t')
+def distance_to_square_wall(angle_deg):
+    """给定角度，返回从原点到方形墙壁的距离"""
+    theta = np.deg2rad(angle_deg)
+    # 计算射线与四条边的交点距离（取最近的正距离）
+    dx = ROOM_HALF / abs(np.cos(theta)) if abs(np.cos(theta)) > 1e-6 else np.inf
+    dy = ROOM_HALF / abs(np.sin(theta)) if abs(np.sin(theta)) > 1e-6 else np.inf
+    return min(dx, dy)
 
-        def log_cb(ts, data, _logconf):
-            yaw = float(data.get('stabilizer.yaw', 0.0))
-            yaw = wrap_deg(yaw)  # -180..180 -> 0..360
-            ranges = {
-                0: data.get('range.front'),
-                180:  data.get('range.back'),
-                90:  data.get('range.left'),
-                270: data.get('range.right'),
-            }
-            mapper.add_sample(yaw, ranges, ts)
+# 模拟扫描
+for t in range(200):
+    yaw = (t * 2) % 360  # 每帧旋转2°
+    # 模拟多方向雷达（例如4个探头在不同偏角）
+    fake_data = {
+        0: distance_to_square_wall(yaw),
+        90: distance_to_square_wall(yaw + 90),
+        180: distance_to_square_wall(yaw + 180),
+        270: distance_to_square_wall(yaw + 270)
+    }
+    # 模拟毫米单位（符合 mapper 的输入）
+    fake_data = {k: v * 1000 for k, v in fake_data.items()}
+    mapper.add_sample(yaw_deg=yaw, ranges_mm=fake_data, timestamp=t)
 
-        cf.log.add_config(lg)
-        lg.data_received_cb.add_callback(log_cb)
-        lg.start()
-
-        try:
-            # 用上层 MotionCommander 控制
-            with MotionCommander(scf, default_height=TARGET_Z) as mc:
-                # 进入 with 会：重置定位->起飞到 default_height（阻塞至到位）
-                time.sleep(0.3)  # 小稳态
-
-                # 开始原地左转
-                mc.start_turn_left(rate=YAW_RATE_DEG)
-                spin_time = (N_TURNS * 360.0) / YAW_RATE_DEG
-
-                # 旋转期间实时刷新
-                t0 = time.time()
-                refresh_dt = 1.0 / PLOT_HZ
-                while time.time() - t0 < spin_time:
-                    plotter.update()
-                    time.sleep(refresh_dt)
-
-                # 停止旋转，悬停半秒稳定
-                mc.stop()
-                t1 = time.time()
-                while time.time() - t1 < 0.5:
-                    plotter.update()
-                    time.sleep(refresh_dt)
-
-            # 退出 with 会自动降落关电机
-        finally:
-            lg.stop()
-
-    # 旋转结束后保留最终图像
-    mapper.fill_gaps_inplace()  # 保证每个方向都有点
-    plt.ioff()
     plotter.update()
-    plt.show(block=True)  # 阻塞到窗口被关闭
-
-if __name__ == '__main__':
-    main()
+    time.sleep(0.02)
