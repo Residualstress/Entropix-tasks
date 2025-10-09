@@ -27,9 +27,9 @@ deck_attached_event = Event()
 
 logging.basicConfig(level=logging.ERROR)
 
-ip = "10.201.171.228"  # TODO: 改成你的服务器 IP
+ip = "172.20.10.14"  # TODO: 改成你的服务器 IP
 
-DEFAULT_HEIGHT = 0.9
+DEFAULT_HEIGHT = 0.7
 
 pet_beacon = None
 april_beacon = None
@@ -115,6 +115,7 @@ def log_pos_callback(timestamp, data, logconf):
     position_estimate[0] = data['stateEstimate.x']
     position_estimate[1] = data['stateEstimate.y']
     position_estimate[2] = data['stateEstimate.z']
+    # position_estimate[2] = data['range.zrange'] / 1000.0
     yaw_estimate = data['stateEstimate.yaw']
 
 
@@ -150,6 +151,7 @@ def find_pet(mc: MotionCommander, pid_area: PIDController1D, pid_yaw: PIDControl
         print("1[PET] FIND_PET_TIMEOUT -> BACKHOME", flush=True)
         pet_beacon.stop() # 停止解析
         print("[PET] FIND_PET_TIMEOUT -> BACKHOME", flush=True)
+        servo_set_angle(SERVO_DOWN_ANGLE)
         return
 
     now = time.time()
@@ -326,17 +328,17 @@ def findpet_backhome_landing(scf):
     )
     pid_yaw = PIDController1D(
         target_point=0.0,
-        kp=4.0, ki=1.2, kd=0.0,
+        kp=8.0, ki=2.4, kd=0.0,
         output_limit=15.0  # 二重限幅，保险
     )
     pid_backhome = PIDController2D(
-        target_point=(0.0, 0.0), 
+        target_point=(0.3, -1.5), 
         kp=1.0, ki=0.3, kd=0.0, 
-        output_limit=0.15
+        output_limit=0.2
     )
     pid_landing = PIDController2D(
         target_point=(0.04, 0.0),
-        kp=1.0, ki=0.3, kd=0.0,
+        kp=0.8, ki=0.2, kd=0.0,
         output_limit=XY_SPEED_LIMIT_LANDING  # 二重限幅，保险
     )
 
@@ -450,7 +452,7 @@ if __name__ == '__main__':
     # UWB 解析
     servo_set_angle(SERVO_DOWN_ANGLE)
 
-    ukf_filter = PositionUKF(dt=0.025, win_size=1) # 50Hz data rate
+    ukf_filter = PositionUKF(dt=0.025, win_size=3) # 50Hz data rate
     uwb = UWB360Receiver("COM5", uwb_callback, None)
     uwb.start()
 
@@ -476,6 +478,7 @@ if __name__ == '__main__':
         logconf.add_variable('stateEstimate.x', 'float')
         logconf.add_variable('stateEstimate.y', 'float')
         logconf.add_variable('stateEstimate.z', 'float')
+        # logconf.add_variable('range.zrange', 'uint16_t')
         logconf.add_variable('stateEstimate.yaw', 'float')
         scf.cf.log.add_config(logconf)
         logconf.data_received_cb.add_callback(log_pos_callback)

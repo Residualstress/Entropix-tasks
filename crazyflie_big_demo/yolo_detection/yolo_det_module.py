@@ -64,6 +64,7 @@ class HttpPetDetection:
         self.resolution_config = resolution_config
         self.resolver = YoloDetect(model_path="yolo11n.pt", cls_name_wanted='teddy bear', draw=True)
         self.ip = ip
+        self.frame = None
 
        
 
@@ -76,19 +77,27 @@ class HttpPetDetection:
         self.cap = cv2.VideoCapture(self.stream_url)
         if not self.cap.isOpened():
             raise RuntimeError(f"无法打开视频流: {self.stream_url}")
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-        self.thread = threading.Thread(target=self._process_loop, daemon=True)
-        self.thread.start()
+        self.process_thread = threading.Thread(target=self._process_loop, daemon=True)
+        self.process_thread.start()
+
+        self.grab_frame_thread = threading.Thread(target=self._grab_frame_loop, daemon=True)
+        self.grab_frame_thread.start()
         print("视频识别线程已启动...")
 
 
     def _process_loop(self):
         while not self.stop_event.is_set():
-            ret, frame = self.cap.read()
-            if not ret:
+            frame = self.frame
+            if self.frame is None:
                 continue
             # frame = cv2.rotate(frame, cv2.ROTATE_180)
             frame = cv2.flip(frame, 1)
+            if self.display:
+                cv2.imshow("Pet Detection", frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    self.stop()
             # 处理帧
             center = self.resolver.detect(frame) # data is center
 
@@ -96,14 +105,16 @@ class HttpPetDetection:
             if self.callback is not None:
                 self.callback(center)
 
-            if self.display:
-                cv2.imshow("Pet Detection", frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    self.stop()
+    def _grab_frame_loop(self):
+        while not self.stop_event.is_set():
+            ret, self.frame = self.cap.read()
+            if not ret:
+                continue
 
     def stop(self):
         self.stop_event.set()
-        self.thread.join()
+        self.process_thread.join()
+        self.grab_frame_thread.join()
         if self.cap:
             self.cap.release()
         if self.display:
@@ -115,10 +126,13 @@ def cb(data):
 
 if __name__ == "__main__":
     # main()
-    pet_detector = HttpPetDetection('10.201.171.228', cb, display=True)
+    pet_detector = HttpPetDetection('172.20.10.14', cb, display=True)
     pet_detector.start()
     
-    time.sleep(3)
-    pet_detector.stop()
+    # time.sleep(3)
+    # pet_detector.stop()
 
-    print('hahhaha')
+    # print('hahhaha')
+
+    while True:
+        time.sleep(1)
