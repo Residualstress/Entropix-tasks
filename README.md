@@ -10,7 +10,7 @@ Entropix/
 │   │   ├── main.py                 # Main script
 │   │   ├── utils.py                # Utility functions
 │   │   ├── config.py               # Configuration (parameters, paths, etc.)
-│   │   └── …                     # Other code modules
+│   │   └── …                       # Other code modules
 │   │
 │   ├── data/                       # Optional: input or sample data
 │   │   ├── input_example.json
