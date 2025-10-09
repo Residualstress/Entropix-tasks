@@ -1,23 +1,26 @@
 # 任务保存架构
-Entropix
-+--- Task_001_<task_name>
-|    +--- env
-|    |    +--- requirements.txt
-|    |    +--- environment.yml
-|    |    +--- setup_instructions.txt
-|    |
-|    +--- src
-|    |    +--- main.py
-|    |    +--- utils.py
-|    |    +--- config.py
-|    |
-|    +--- data
-|    |    +--- input_example.json
-|    |
-|    +--- output
-|    |
-|    +--- README.txt
-|    +--- LICENSE / notes.md
+Entropix/
+├── Task_001_<task_name>/
+│   ├── env/
+│   │   ├── requirements.txt        # Python environment dependencies (pip)
+│   │   ├── environment.yml         # Conda environment file (optional)
+│   │   └── setup_instructions.txt  # Quick setup guide (optional)
+│   │
+│   ├── src/
+│   │   ├── main.py                 # Main script
+│   │   ├── utils.py                # Utility functions
+│   │   ├── config.py               # Configuration (parameters, paths, etc.)
+│   │   └── …                     # Other code modules
+│   │
+│   ├── data/                       # Optional: input or sample data
+│   │   ├── input_example.json
+│   │   └── …
+│   │
+│   ├── output/                     # Optional: generated results or models
+│   │   └── …
+│   │
+│   ├── README.txt (or README.md)   # Task description
+│   └── LICENSE / notes.md (optional)
 
 # Task 名称: <task_name>
 ## 1. 简介
