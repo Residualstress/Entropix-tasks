@@ -134,5 +134,9 @@ if __name__ == "__main__":
 
     # print('hahhaha')
 
-    while True:
+    for i in range(3):
         time.sleep(1)
+
+    pet_detector.stop()
+
+    print('ok')

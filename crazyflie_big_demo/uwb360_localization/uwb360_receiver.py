@@ -135,7 +135,7 @@ if __name__ == "__main__":
     def packet_cb(pkt):
         print(pkt)
 
-    parser = UWB360Receiver("COM5", packet_cb=packet_cb)
+    parser = UWB360Receiver("/dev/ttyUSB0", packet_cb=packet_cb)
     parser.start()
 
     # 主线程可以继续做别的事情

@@ -13,7 +13,7 @@ def uwb_cb(pkt):
     print(f'x:{x} y:{y}')
 
 ukf_filter = PositionUKF(dt=0.025, win_size=1) # 50Hz data rate
-uwb = UWB360Receiver("COM5", uwb_cb, ukf_filter)
+uwb = UWB360Receiver("/dev/ttyUSB0", uwb_cb, ukf_filter)
 uwb.start()
 
 # # ukf_filter = PositionUKF(dt=0.02, win_size=5) # 50Hz data rate
