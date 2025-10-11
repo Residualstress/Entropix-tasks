@@ -37,6 +37,8 @@ DIST_AVAILABLE_M = 3.0      # 发现新方向的阈值距离
 estimated_yaw = None
 estimated_ranges = None
 
+first_jump_angle_range = None
+
 # ====== 日志等级 ======
 logging.basicConfig(level=logging.ERROR)
 
@@ -53,10 +55,12 @@ def slam_scan(mc: MotionCommander):
         time.sleep(refresh_dt)
     mc.stop()
 
-def calc_and_turn(mc: MotionCommander):
+def calc_and_turn_first(mc: MotionCommander):
     angs, dists = mapper.to_polar()
     is_dist_avail = [dist > DIST_AVAILABLE_M for dist in dists]
     _ang_start, _ang_end, ang_center = longest_true_angle_interval(angs, is_dist_avail)
+    global first_jump_angle_range
+    first_jump_angle_range = (_ang_start, _ang_end)
     print(f"最长连续True区间：{_ang_start:.1f}° → {_ang_end:.1f}°，中心角：{ang_center:.1f}°")
     direction, turn_angle = calc_turn_angle(estimated_yaw, ang_center)
     
@@ -64,19 +68,37 @@ def calc_and_turn(mc: MotionCommander):
         mc.turn_left(turn_angle)
     else:
         mc.turn_right(turn_angle)
+    time.sleep(2.0)
+
+def calc_and_turn_second(mc: MotionCommander):
+    angs, dists = mapper.to_polar()
+    is_dist_avail = [dist > DIST_AVAILABLE_M for dist in dists]
+    _ang_start, _ang_end, ang_center = longest_true_angle_interval(angs, is_dist_avail, first_jump_angle_range)
+    # global first_jump_angle_range
+    # first_jump_angle_range = (_ang_start, _ang_end)
+    print(f"最长连续True区间：{_ang_start:.1f}° → {_ang_end:.1f}°，中心角：{ang_center:.1f}°")
+    direction, turn_angle = calc_turn_angle(estimated_yaw, ang_center)
+    
+    if direction == 'left':
+        mc.turn_left(turn_angle)
+    else:
+        mc.turn_right(turn_angle)
+    time.sleep(2.0)
 
 def two_jump(scf):
     with MotionCommander(scf, default_height=TARGET_Z) as mc:
         print('起飞中...')
 
         slam_scan(mc)
-        calc_and_turn(mc)
-
-        time.sleep(2.0)
-
+        calc_and_turn_first(mc)
         print(f'yaw: {estimated_yaw:.1f}°')
-        
         mc.forward(1.5)
+        
+        slam_scan(mc)
+        calc_and_turn_second(mc)
+        print(f'yaw: {estimated_yaw:.1f}°')
+        mc.forward(1.5)
+
         mc.land()
 
 def log_cb(ts, data, _logconf):
