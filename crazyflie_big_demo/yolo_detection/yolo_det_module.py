@@ -36,6 +36,8 @@ class YoloDetect():
                 except Exception:
                     cls_name = str(cls_id)
 
+                print(cls_name)
+
                 if cls_name != self.cls_name_wanted:
                     continue
 
@@ -62,7 +64,7 @@ class HttpPetDetection:
         self.display = display
         self.callback = callback  # 识别结果回调函数
         self.resolution_config = resolution_config
-        self.resolver = YoloDetect(model_path="yolo11n.pt", cls_name_wanted='teddy bear', draw=True)
+        self.resolver = YoloDetect(model_path="teddy.pt", cls_name_wanted='teddy bear', draw=True)
         self.ip = ip
         self.frame = None
 
@@ -71,8 +73,8 @@ class HttpPetDetection:
     def start(self):
          # 设置分辨率
         requests.get(f'http://{self.ip}/control?var=framesize&val={self.resolution_config}')
-        requests.get(f'http://{self.ip}/control?var=quality&val=20') # quality 50
-        requests.get(f'http://{self.ip}/control?var=ae_level&val=-1') # ev -1
+        requests.get(f'http://{self.ip}/control?var=quality&val=10') # quality 50
+        requests.get(f'http://{self.ip}/control?var=ae_level&val=0') # ev -1
         requests.get(f'http://{self.ip}/control?var=special_effect&val=0') # color
         self.cap = cv2.VideoCapture(self.stream_url)
         if not self.cap.isOpened():
@@ -94,12 +96,15 @@ class HttpPetDetection:
                 continue
             # frame = cv2.rotate(frame, cv2.ROTATE_180)
             frame = cv2.flip(frame, 1)
+            
+            # 处理帧
+            center = self.resolver.detect(frame) # data is center
             if self.display:
+                if center is not None:
+                    cv2.drawMarker(frame, center[0], (0, 0, 255), markerType=cv2.MARKER_STAR, markerSize=30, thickness=2, line_type=cv2.LINE_AA)
                 cv2.imshow("Pet Detection", frame)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     self.stop()
-            # 处理帧
-            center = self.resolver.detect(frame) # data is center
 
             # 回调返回结果
             if self.callback is not None:
@@ -134,7 +139,7 @@ if __name__ == "__main__":
 
     # print('hahhaha')
 
-    for i in range(3):
+    for i in range(300):
         time.sleep(1)
 
     pet_detector.stop()

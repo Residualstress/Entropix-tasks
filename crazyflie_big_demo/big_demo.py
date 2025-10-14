@@ -27,8 +27,7 @@ from utils.calc_turn_angle import calc_turn_angle
 
 URI = uri_helper.uri_from_env(default='radio://0/80/2M/E7E7E7E7E7')
 
-mapper = SpinMapper(bin_deg=ANGLE_BIN_DEG, max_range_m=MAX_RANGE_M, min_range_m=MIN_RANGE_M)
-plotter = LivePlotter(mapper, alpha=0.5, plt_lim_m=PLOT_LIM_M)
+
 
 deck_attached_event = Event()
 
@@ -88,7 +87,7 @@ target_area_sqrt = None
 start_time_stamp = None
 FIND_PET_TIMEOUT = 3
 
-state = 'FIND_PET'         # 'BACKHOME' -> 'ALIGNING' -> 'TRACK_DESCEND' -> 'FINAL_DROP' -> 'LANDED'
+state = 'TwoJump'         # 'BACKHOME' -> 'ALIGNING' -> 'TRACK_DESCEND' -> 'FINAL_DROP' -> 'LANDED'
 
 SERVO_DOWN_ANGLE = 180
 SERVO_FORWARD_ANGLE = 90
@@ -105,7 +104,8 @@ PLOT_LIM_M = 2.0            # 画布范围
 PLOT_HZ = 15                # 实时刷新频率
 DIST_AVAILABLE_M = 3.0      # 发现新方向的阈值距离
 
-
+mapper = SpinMapper(bin_deg=ANGLE_BIN_DEG, max_range_m=MAX_RANGE_M, min_range_m=MIN_RANGE_M)
+plotter = LivePlotter(mapper, alpha=0.5, plt_lim_m=PLOT_LIM_M)
 
 first_jump_angle_range = None
 
@@ -132,62 +132,6 @@ def yaw_to_rot2d(yaw_deg=None, yaw_rad=None):
     R = np.array([[c, -s],
                   [s,  c]])
     return R
-
-def slam_scan(mc: MotionCommander):
-    mc.start_turn_left(rate=YAW_RATE_DEG)
-    spin_time = (N_TURNS * 360.0) / YAW_RATE_DEG
-    t0 = time.time()
-    refresh_dt = 1.0 / PLOT_HZ
-    while time.time() - t0 < spin_time:
-        plotter.update()
-        time.sleep(refresh_dt)
-    mc.stop()
-
-def calc_and_turn_first(mc: MotionCommander):
-    angs, dists = mapper.to_polar()
-    is_dist_avail = [dist > DIST_AVAILABLE_M for dist in dists]
-    _ang_start, _ang_end, ang_center = longest_true_angle_interval(angs, is_dist_avail)
-    global first_jump_angle_range
-    first_jump_angle_range = (_ang_start, _ang_end)
-    print(f"最长连续True区间：{_ang_start:.1f}° → {_ang_end:.1f}°，中心角：{ang_center:.1f}°")
-    direction, turn_angle = calc_turn_angle(yaw_estimate, ang_center)
-    
-    if direction == 'left':
-        mc.turn_left(turn_angle)
-    else:
-        mc.turn_right(turn_angle)
-    time.sleep(2.0)
-
-def calc_and_turn_second(mc: MotionCommander):
-    angs, dists = mapper.to_polar()
-    is_dist_avail = [dist > DIST_AVAILABLE_M for dist in dists]
-    _ang_start, _ang_end, ang_center = longest_true_angle_interval(angs, is_dist_avail, first_jump_angle_range)
-    # global first_jump_angle_range
-    # first_jump_angle_range = (_ang_start, _ang_end)
-    print(f"最长连续True区间：{_ang_start:.1f}° → {_ang_end:.1f}°，中心角：{ang_center:.1f}°")
-    direction, turn_angle = calc_turn_angle(yaw_estimate, ang_center)
-    
-    if direction == 'left':
-        mc.turn_left(turn_angle)
-    else:
-        mc.turn_right(turn_angle)
-    time.sleep(2.0)
-
-def two_jump(scf):
-    with MotionCommander(scf, default_height=TARGET_Z) as mc:
-        print('起飞中...')
-
-        slam_scan(mc)
-        calc_and_turn_first(mc)
-        print(f'yaw: {yaw_estimate:.1f}°')
-        mc.forward(1.5)
-        
-        slam_scan(mc)
-        calc_and_turn_second(mc)
-        print(f'yaw: {yaw_estimate:.1f}°')
-        mc.forward(1.5)
-
-        mc.land()
 
 def log_pos_callback(timestamp, data, logconf):
     global position_estimate, yaw_estimate, estimated_ranges
@@ -221,6 +165,76 @@ def pix_to_meters(du, dv, z):
     ex = z * (du / FX)
     ey = z * (dv / FY)
     return ex, ey
+
+mapper = SpinMapper(bin_deg=ANGLE_BIN_DEG, max_range_m=MAX_RANGE_M, min_range_m=MIN_RANGE_M)
+plotter = LivePlotter(mapper, alpha=0.5, plt_lim_m=PLOT_LIM_M)
+
+class TwoJump:
+    def __init__(self):
+        self.two_jump_state = "SCAN"
+        self.t0 = 0
+        self.last_jump_angle_range = None
+        self.direction = 0
+        self.turn_angle = 0
+        self.jump_counter = 0
+        self.DIST_AVAILABLE_M = 3.0      # 发现新方向的阈值距离
+        self.YAW_RATE_DEG = 40        # 旋转角速度 (deg/s)
+    def two_jump(self, mc: MotionCommander):
+        global state
+        if pix_err_ema is not None or self.jump_counter >= 2:
+            state = "FIND_PET"
+            '''
+            GET READY FOR FIND PET
+            '''
+            return
+        print('self.two_jump_state', self.two_jump_state)
+        if self.two_jump_state == "SCAN":
+            print('SCANing')
+            mc.start_turn_left(rate=self.YAW_RATE_DEG)
+            plotter.update()
+            spin_time = (N_TURNS * 360.0) / self.YAW_RATE_DEG
+            if time.time() - self.t0 > spin_time:
+                mc.stop()
+                angs, dists = mapper.to_polar()
+                is_dist_avail = [dist > self.DIST_AVAILABLE_M for dist in dists]
+                if self.last_jump_angle_range is None:
+                    _ang_start, _ang_end, ang_center = longest_true_angle_interval(angs, is_dist_avail)
+                    # print(f"最长连续True区间：{_ang_start:.1f}° → {_ang_end:.1f}°，中心角：{ang_center:.1f}°")
+                else:
+                    _ang_start, _ang_end, ang_center = longest_true_angle_interval(angs, is_dist_avail, self.last_jump_angle_range)
+                    # print(f"最长连续True区间：{_ang_start:.1f}° → {_ang_end:.1f}°，中心角：{ang_center:.1f}°")
+                if ang_center is None:
+                    return
+                self.direction, self.turn_angle = calc_turn_angle(yaw_estimate, ang_center)
+                self.last_jump_angle_range = (_ang_start, _ang_end)
+                self.spin_time = self.turn_angle / self.YAW_RATE_DEG
+                self.t0 = time.time()
+                self.two_jump_state = "TURN"
+                print('from scan to turn')
+                
+        elif self.two_jump_state == "TURN":
+            print('TURNing')
+            if self.direction == 'left':
+                mc.start_turn_left(rate=self.YAW_RATE_DEG)
+            else:
+                mc.start_circle_right(rate=self.YAW_RATE_DEG)
+            if time.time() - self.t0 > self.spin_time:
+                mc.stop()
+                forward_m = 1.5
+                self.spin_time = forward_m / 0.2
+                self.t0 = time.time()
+                self.two_jump_state = "FORWARD"
+                print('from turn to forward')
+        
+        elif self.two_jump_state == "FORWARD":
+            print('FORWARDing')
+            mc.start_linear_motion(0.2, 0.0, 0.0, 0.0)
+            if time.time() - self.t0 > self.spin_time or estimated_ranges[0]< 1.0 or estimated_ranges[90]< 0.5 or estimated_ranges[180]< 1.0 or estimated_ranges[270]< 0.5:
+                mc.stop()
+                self.two_jump_state = "SCAN"
+                self.jump_counter += 1
+                print('from forward to scan')
+                print(f'jump counter: {self.jump_counter}')
 
 def find_pet(mc: MotionCommander, pid_area: PIDController1D, pid_yaw: PIDController1D):
     def pix_to_deg(du):
@@ -431,9 +445,12 @@ def findpet_backhome_landing(scf):
         time.sleep(1.5)  # 起飞后稳定一下
         global start_time_stamp
         start_time_stamp = time.time()
+        twojump = TwoJump()
         while True:
             try:
-                if state == 'FIND_PET':
+                if state == 'TwoJump':
+                    twojump.two_jump(mc)
+                elif state == 'FIND_PET':
                     find_pet(mc, pid_area, pid_yaw)
                 elif state == 'BACKHOME':
                     back_home(mc, pid_backhome)
@@ -537,7 +554,7 @@ if __name__ == '__main__':
     servo_set_angle(SERVO_DOWN_ANGLE)
 
     ukf_filter = PositionUKF(dt=0.025, win_size=3) # 50Hz data rate
-    uwb = UWB360Receiver("/dev/ttyUSB0", uwb_callback, None)
+    uwb = UWB360Receiver("COM5", uwb_callback, None)
     uwb.start()
 
     # AprilTag 解析
